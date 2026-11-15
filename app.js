@@ -207,7 +207,7 @@
     var h = topHtml() + '<div><p class="eyebrow">' + S.fmt(t, 'long') + '</p><h1>Today</h1></div>';
 
     if (!kids.length) {
-      return { title: 'Today', html: h + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrol a child and the due dates, call list and reminders fill in by themselves.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol first child</a><button class="btn quiet" data-action="load-demo">Or try it with demo data</button></div>' };
+      return { title: 'Today', html: h + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrol a child and the due dates, call list and reminders fill in by themselves.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol first child</a></div>' };
     }
     // Overview first (counts), then the work in order of urgency. One list, no second filter to learn.
     var stats = '<dl class="stats" aria-label="Summary">' + [['Defaulters', defs.length, 'def'], ['Overdue', late.length, 'late'], ['Due soon', soon.length, 'soon']].map(function (s) {
@@ -511,7 +511,7 @@
 
   /* ============================== SETTINGS =========================== */
   function viewSettings(r, t) {
-    var demoN = D.children().filter(function (c) { return c.demo; }).length, backup = D.lastBackupAt();
+    var backup = D.lastBackupAt();
     var html = topHtml() + '<h1>Settings</h1>' +
       '<div class="card"><div class="field"><label for="clinicName">Clinic name</label><input id="clinicName" type="text" maxlength="60" autocomplete="off" value="' + esc(D.clinicName()) + '" placeholder="e.g. Oluyole Primary Health Centre"><p class="hint">Shown at the top and used in reminder messages. <span id="saved" aria-live="polite"></span></p></div></div>' +
       '<div class="sec-h"><h2>Your data</h2></div><div class="card stack"><p class="small muted">Records live only on this device. ' + (backup ? 'Last backup: ' + S.fmt(backup.slice(0, 10)) + '.' : 'You have not made a backup yet.') + '</p>' +
@@ -525,26 +525,8 @@
       '<ul class="sched">' + C.visits.map(function (v) { return '<li><span>' + esc(v.label) + '</span><span class="muted">' + (v.offset.weeks ? v.offset.weeks + ' weeks' : v.offset.months + ' months') + ' from birth</span></li>'; }).join('') + '</ul>' +
       '<div class="field" style="margin-top:8px"><label for="verifiedByInput">Verified by (nurse / clinic lead)</label><input id="verifiedByInput" type="text" maxlength="60" placeholder="e.g. Matron Adebayo, RN" value="' + esc(D.verifiedBy()) + '"></div>' +
       '<button type="button" class="btn ' + (D.isVerified() ? '' : 'primary ') + 'block" data-action="toggle-verify">' + (D.isVerified() ? 'Mark as unverified' : ic('check') + 'Verify clinic schedule') + '</button>' +
-      '<p class="hint">Due soon: within ' + C.soonDays + ' days · Defaulter: ' + C.defaulterDays + '+ days overdue · Reminders: 2 and 1 days before · Recalls: 1 and 7 days after. These are design choices, not clinical rules.</p></div></details>' +
-      '<details class="card fold"><summary><span>Demo data</span>' + (demoN ? '<span class="chip c-up">' + demoN + ' loaded</span>' : '') + ic('chev') + '</summary><div class="fold-body stack"><p class="small muted">Fake children only, with dates set relative to today so every list has something in it.</p>' +
-      '<button class="btn block" data-action="load-demo">Load demo data</button>' + (demoN ? '<button class="btn block danger" data-action="remove-demo">Remove ' + demoN + ' demo children</button>' : '') + '</div></details>';
+      '<p class="hint">Due soon: within ' + C.soonDays + ' days · Defaulter: ' + C.defaulterDays + '+ days overdue · Reminders: 2 and 1 days before · Recalls: 1 and 7 days after. These are design choices, not clinical rules.</p></div></details>';
     return { title: 'Settings', html: html };
-  }
-
-  function loadDemo() {
-    D.removeDemo();
-    var t = S.today(), n = 0;
-    var spec = [['Demo Amina', 'wk6', -21, 1, 1], ['Demo Chidi', 'wk10', -9, 1, 0], ['Demo Ife', 'wk14', -3, 1, 1], ['Demo Bola', 'wk6', -1, 1, 0],
-      ['Demo Emeka', 'wk10', 0, 1, 0], ['Demo Zainab', 'wk14', 1, 1, 1], ['Demo Tunde', 'm9', 2, 1, 0], ['Demo Ngozi', 'wk6', 12, 0, 0], ['Demo Kemi', 'm15', 40, 1, 0]];
-    spec.forEach(function (s, i) {
-      var v = C.visits.filter(function (x) { return x.key === s[1]; })[0], target = S.addDays(t, s[2]);
-      var dob = v.offset.weeks ? S.addDays(target, -7 * v.offset.weeks) : S.addMonths(target, -v.offset.months);
-      var phone = '+23480000000' + (10 + i), alt = s[4] ? '+23480000001' + (10 + i) : '';
-      var c = D.addChild({ name: s[0], dob: dob, phone: phone, altPhone: alt, consent: !!s[3], demo: true });
-      for (var k = 0; k < C.visits.length && C.visits[k].key !== s[1]; k++) D.setDone(c.id, C.visits[k].key, S.dueDate(dob, C.visits[k]));
-      n++;
-    });
-    return n;
   }
 
   /* ============================== EVENTS ============================= */
@@ -599,8 +581,6 @@
         D.markBackup(); toast('Backup downloaded. Keep the file somewhere safe.', null, 5000); render(); break; }
       case 'pick-restore': $file.value = ''; $file.click(); break;
       case 'confirm-restore': D.restore(ui.pendingRestore); ui.pendingRestore = null; closeDlg(); toast('Backup restored'); go('#/today'); render(); break;
-      case 'load-demo': { var n = loadDemo(); toast(n + ' demo children added'); go('#/today'); render(); break; }
-      case 'remove-demo': { var k = D.removeDemo(); toast(k + ' demo children removed'); render(); break; }
       case 'run-now': { var added = processToday(t); toast(added ? added + ' simulated messages logged' : 'Nothing more is due to send today'); render(); break; }
       case 'reset-tpl': { var tk = el.getAttribute('data-tpl'); D.setTemplate(tk, C.templates[tk]); $('#tpl-' + tk).value = C.templates[tk]; updateTpl(tk); break; }
     }

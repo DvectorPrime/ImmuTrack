@@ -37,6 +37,7 @@
         state = blank();
       }
     }
+    removeDemo();
     ensureVisits();
     return state;
   }
