@@ -6,7 +6,7 @@
   var state = blank(), saveOk = true;
 
   function blank() {
-    return { v: 1, clinicName: '', children: [], visits: [], messageLog: [], templates: {}, lastBackupAt: null };
+    return { v: 1, clinicName: '', scheduleVerified: null, verifiedBy: '', children: [], visits: [], messageLog: [], templates: {}, lastBackupAt: null };
   }
   function uid() {
     return (root.crypto && root.crypto.randomUUID) ? root.crypto.randomUUID()
@@ -16,6 +16,8 @@
     var b = blank();
     d = d && typeof d === 'object' ? d : {};
     b.clinicName = typeof d.clinicName === 'string' ? d.clinicName : '';
+    b.scheduleVerified = typeof d.scheduleVerified === 'boolean' ? d.scheduleVerified : null;
+    b.verifiedBy = typeof d.verifiedBy === 'string' ? d.verifiedBy : '';
     b.children = Array.isArray(d.children) ? d.children : [];
     b.visits = Array.isArray(d.visits) ? d.visits : [];
     b.messageLog = Array.isArray(d.messageLog) ? d.messageLog : [];
@@ -69,18 +71,30 @@
   }
 
   /* ----------------------------- changes ----------------------------- */
+  function applyCustomVisits(childId, dob, customVisits) {
+    if (!customVisits || typeof customVisits !== 'object') return;
+    S.CONFIG.visits.forEach(function (v) {
+      var cv = customVisits[v.key]; if (!cv) return;
+      var rec = visitOf(childId, v.key); if (!rec) return;
+      var stdDue = S.dueDate(dob, v);
+      if (cv.customDue !== undefined) rec.customDue = (cv.customDue && cv.customDue !== stdDue) ? cv.customDue : null;
+      if (cv.doneDate !== undefined) rec.doneDate = cv.doneDate || null;
+    });
+  }
   function addChild(f) {
     var c = { id: uid(), name: f.name.trim(), dob: f.dob, phone: f.phone, altPhone: f.altPhone || '',
       consent: !!f.consent, createdAt: new Date().toISOString() };
     if (f.demo) c.demo = true;
     state.children.push(c);
-    S.CONFIG.visits.forEach(function (v) { state.visits.push({ childId: c.id, visitKey: v.key, doneDate: null }); });
+    S.CONFIG.visits.forEach(function (v) { state.visits.push({ childId: c.id, visitKey: v.key, doneDate: null, customDue: null }); });
+    applyCustomVisits(c.id, c.dob, f.customVisits);
     save();
     return c;
   }
   function updateChild(id, f) {
     var c = child(id); if (!c) return null;
     c.name = f.name.trim(); c.dob = f.dob; c.phone = f.phone; c.altPhone = f.altPhone || ''; c.consent = !!f.consent;
+    applyCustomVisits(c.id, c.dob, f.customVisits);
     save();
     return c;
   }
@@ -92,8 +106,17 @@
   }
   function setDone(childId, visitKey, date) {   // date = "YYYY-MM-DD" or null (undo)
     var v = visitOf(childId, visitKey);
-    if (!v) { v = { childId: childId, visitKey: visitKey, doneDate: null }; state.visits.push(v); }
+    if (!v) { v = { childId: childId, visitKey: visitKey, doneDate: null, customDue: null }; state.visits.push(v); }
     var prev = v.doneDate; v.doneDate = date || null; save();
+    return prev;
+  }
+  function setCustomDue(childId, visitKey, date) { // date = "YYYY-MM-DD" or null (reset to standard)
+    var v = visitOf(childId, visitKey), c = child(childId);
+    if (!v) { v = { childId: childId, visitKey: visitKey, doneDate: null, customDue: null }; state.visits.push(v); }
+    var def = c ? S.dueDate(c.dob, S.CONFIG.visits.filter(function (x) { return x.key === visitKey; })[0]) : null;
+    var prev = v.customDue || null;
+    v.customDue = (date && date !== def) ? date : null;
+    save();
     return prev;
   }
   function removeDemo() {
@@ -116,6 +139,13 @@
   /* --------------------------- settings etc. ------------------------- */
   function setClinicName(n) { state.clinicName = String(n).slice(0, 60); save(); }
   function clinicName() { return state.clinicName.trim(); }
+  function isVerified() { return state.scheduleVerified !== null ? state.scheduleVerified : S.CONFIG.verified; }
+  function verifiedBy() { return (state.verifiedBy || S.CONFIG.verifiedBy || '').trim(); }
+  function setVerified(val, by) {
+    state.scheduleVerified = !!val;
+    state.verifiedBy = String(by == null ? state.verifiedBy : by).slice(0, 60);
+    save();
+  }
   function template(type) { return state.templates[type] != null ? state.templates[type] : S.CONFIG.templates[type]; }
   function setTemplate(type, text) { if (text === S.CONFIG.templates[type]) delete state.templates[type]; else state.templates[type] = text; save(); }
   function markBackup() { state.lastBackupAt = new Date().toISOString(); save(); }
@@ -137,7 +167,7 @@
     }
     for (var j = 0; j < d.visits.length; j++) {
       var v = d.visits[j];
-      if (!v || typeof v.childId !== 'string' || typeof v.visitKey !== 'string' || (v.doneDate !== null && !S.isISO(v.doneDate)))
+      if (!v || typeof v.childId !== 'string' || typeof v.visitKey !== 'string' || (v.doneDate !== null && !S.isISO(v.doneDate)) || (v.customDue != null && !S.isISO(v.customDue)))
         return { ok: false, error: 'Visit record ' + (j + 1) + ' is damaged, so nothing was restored.' };
     }
     return { ok: true, children: d.children.length, visits: d.visits.filter(function (v) { return v.doneDate; }).length, exportedAt: obj.exportedAt || null };
@@ -146,17 +176,19 @@
     var n = normalise(obj.data), ids = {};
     n.children.forEach(function (c) { ids[c.id] = true; });
     n.visits = n.visits.filter(function (v) { return ids[v.childId]; });   // drop orphans
-    n.messageLog = n.messageLog.filter(function (m) { return ids[m.childId]; });
+    n.messageLog = n.messageLog.filter(function (m) { return !m.childId || ids[m.childId]; });
     state = n; ensureVisits(); save();
   }
 
   root.Store = {
     load: load, save: save, isSaving: function () { return saveOk; },
     children: children, child: child, visitOf: visitOf, findDuplicate: findDuplicate,
-    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, removeDemo: removeDemo,
+    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, setCustomDue: setCustomDue, removeDemo: removeDemo,
     hasLog: hasLog, addLog: addLog, log: function () { return state.messageLog; },
-    clinicName: clinicName, setClinicName: setClinicName, template: template, setTemplate: setTemplate,
+    clinicName: clinicName, setClinicName: setClinicName,
+    isVerified: isVerified, verifiedBy: verifiedBy, setVerified: setVerified,
+    template: template, setTemplate: setTemplate,
     lastBackupAt: function () { return state.lastBackupAt; }, markBackup: markBackup,
     exportData: exportData, validateBackup: validateBackup, restore: restore
   };
-})(typeof self !== 'undefined' ? self : this);
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : this));

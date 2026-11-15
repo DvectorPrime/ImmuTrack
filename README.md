@@ -13,7 +13,7 @@ Offline infant-immunisation visit tracker for one clinic. Vanilla HTML/CSS/JS, n
 ## Run
 ```
 python3 -m http.server 8000      # then open http://localhost:8000
-node tests/schedule.test.js      # due-date logic, 37 checks
+node tests/schedule.test.js      # due-date & custom schedule logic, 46 checks
 ```
 Service workers need `localhost` or HTTPS, so opening `index.html` as a file works but not offline.
 
@@ -21,7 +21,7 @@ Service workers need `localhost` or HTTPS, so opening `index.html` as a file wor
 - **GitHub Pages:** push this folder to a repo, Settings > Pages > deploy from branch.
 - **Netlify:** drag the folder onto app.netlify.com/drop.
 
-Whenever you change any file, bump `CACHE` in `sw.js` (`immutrack-v4`...) so phones update.
+Whenever you change any file, bump `CACHE` in `sw.js` (`immutrack-v7`...) so phones update.
 
 ## Before real use
 1. Clinic verifies the visit ages in `schedule.js`, then sets `verified: true` and `verifiedBy`.

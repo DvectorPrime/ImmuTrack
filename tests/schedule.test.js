@@ -73,5 +73,29 @@ global.location = { search: '?today=not-a-date' };
 eq('invalid demo date ignored', S.isDemoDate(), false);
 delete global.location;
 
+// Store custom scheduling & verification checks
+const mem = {};
+global.Schedule = S;
+global.localStorage = { getItem: (k) => mem[k] || null, setItem: (k, v) => { mem[k] = v; } };
+require('../store.js');
+const D = global.Store;
+D.load();
+const child = D.addChild({
+  name: 'Kola',
+  dob: '2026-01-10',
+  phone: '+2347047386742',
+  consent: true,
+  customVisits: { wk6: { doneDate: '2026-02-22' }, wk10: { customDue: '2026-04-04' } }
+});
+eq('custom doneDate at enrol', D.visitOf(child.id, 'wk6').doneDate, '2026-02-22');
+eq('custom dueDate at enrol', D.visitOf(child.id, 'wk10').customDue, '2026-04-04');
+D.setCustomDue(child.id, 'wk14', '2026-05-02');
+eq('setCustomDue updates visit', D.visitOf(child.id, 'wk14').customDue, '2026-05-02');
+D.setCustomDue(child.id, 'wk14', '2026-04-18'); // standard date resets customDue to null
+eq('setCustomDue to standard resets to null', D.visitOf(child.id, 'wk14').customDue, null);
+D.setVerified(true, 'Matron Adebayo');
+eq('clinic schedule verification saved', [D.isVerified(), D.verifiedBy()], [true, 'Matron Adebayo']);
+eq('backup with customDue validates', D.validateBackup(D.exportData()).ok, true);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

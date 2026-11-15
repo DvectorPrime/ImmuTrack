@@ -6,7 +6,8 @@
   var $main = document.getElementById('main'), $tabs = document.getElementById('tabs'),
       $toast = document.getElementById('toast'), $dlg = document.getElementById('dlg'),
       $banner = document.getElementById('banner'), $file = document.getElementById('restoreFile');
-  var ui = { remindTab: 'queue', search: '', dupOk: false, doneCtx: null, pendingRestore: null };
+  var ui = { remindTab: 'queue', search: '', dupOk: false, doneCtx: null, reschedCtx: null, pendingRestore: null,
+    customSchedOpen: false, customVisits: {} };
 
   var esc = function (s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -41,8 +42,10 @@
   /* ------------------------------ data helpers ----------------------- */
   function visitList(c, t) {
     return C.visits.map(function (v) {
-      var rec = D.visitOf(c.id, v.key), due = S.dueDate(c.dob, v), done = rec ? rec.doneDate : null;
-      return { key: v.key, label: v.label, due: due, done: done, st: S.status(due, done, t) };
+      var rec = D.visitOf(c.id, v.key), stdDue = S.dueDate(c.dob, v);
+      var customDue = rec && rec.customDue ? rec.customDue : null;
+      var due = customDue || stdDue, done = rec ? rec.doneDate : null;
+      return { key: v.key, label: v.label, due: due, stdDue: stdDue, customDue: customDue, done: done, st: S.status(due, done, t) };
     });
   }
   function urgentRow(c, t) {
@@ -283,7 +286,22 @@
       '<div id="dup" class="callout warn" hidden style="margin-top:16px" role="alert"></div>' +
       '<div class="form-actions"><button class="btn primary block" type="submit">' + (edit ? 'Save changes' : 'Enrol child') + '</button>' +
       (edit ? '<a class="btn block" href="#/child/' + c.id + '">Cancel</a>' : '') + '</div></form>';
-    return { title: title, html: html, after: function () { ui.dupOk = false; touched = {}; updateEnrolLive(); } };
+    return { title: title, html: html, after: function () {
+      ui.dupOk = false; touched = {};
+      ui.customVisits = {};
+      var hasCustom = false;
+      if (edit && c) {
+        C.visits.forEach(function (x) {
+          var rec = D.visitOf(c.id, x.key);
+          if (rec && (rec.customDue || rec.doneDate)) {
+            ui.customVisits[x.key] = { customDue: rec.customDue || null, doneDate: rec.doneDate || null };
+            if (rec.customDue) hasCustom = true;
+          }
+        });
+      }
+      ui.customSchedOpen = hasCustom;
+      updateEnrolLive();
+    } };
   }
   function field(id, label, input, extra, errId) {
     return '<div class="field" data-field="' + id + '"><label for="f-' + id + '">' + label + '</label>' + input + extra + '<p class="msg" id="' + errId + '"></p></div>';
@@ -323,20 +341,47 @@
     if (r.errs.name && show('name')) setField('name', r.errs.name, 'err'); else setField('name', '', '');
     if (r.phone) setField('phone', S.formatPhone(r.phone), 'ok'); else if (r.errs.phone && show('phone')) setField('phone', r.errs.phone, 'err'); else setField('phone', '', '');
     if (r.alt) setField('alt', S.formatPhone(r.alt), 'ok'); else if (r.errs.alt && show('alt')) setField('alt', r.errs.alt, 'err'); else setField('alt', '', '');
-    // Live schedule preview
+    // Live schedule preview + optional per-child custom schedule
     var pv = $('#preview');
     if (v.dob && S.isISO(v.dob) && v.dob <= t) {
       pv.hidden = false;
-      var past = 0;
-      pv.innerHTML = '<h2 style="margin-bottom:8px">Due dates</h2><ul class="sched">' + C.visits.map(function (x) {
-        var due = S.dueDate(v.dob, x), st = S.status(due, null, t); if (S.isLate(st)) past++;
-        return '<li><span>Visit at ' + esc(x.label) + '</span><span>' + S.fmt(due) + (S.isLate(st) ? ' <span class="chip ' + (st.state === 'defaulter' ? 'c-def' : 'c-late') + '">Past</span>' : '') + '</span></li>';
-      }).join('') + '</ul>' + (past ? '<p class="hint" style="margin-top:8px">' + past + ' of these ' + (past === 1 ? 'date has' : 'dates have') + ' already passed. After enrolling, mark any visits the child has already had.</p>' : '');
-      if (!C.verified) pv.innerHTML += '<p class="hint" style="margin-top:8px">Schedule not yet verified by the clinic.</p>';
+      var past = 0, customCount = 0;
+      C.visits.forEach(function (x) {
+        var cv = ui.customVisits[x.key] || {}, std = S.dueDate(v.dob, x);
+        var due = (cv.customDue && S.isISO(cv.customDue)) ? cv.customDue : std;
+        if (due !== std) customCount++;
+        var st = S.status(due, cv.doneDate || null, t);
+        if (S.isLate(st)) past++;
+      });
+      var head = '<div class="sec-h" style="margin:0 0 8px"><h2>Due dates' + (customCount ? ' <span class="chip c-soon">' + customCount + ' custom</span>' : '') + '</h2>' +
+        '<button type="button" class="btn quiet" style="min-height:36px;padding:0 10px;font-size:14px" data-action="toggle-custom-sched">' +
+        (ui.customSchedOpen ? 'Done customising' : 'Customise schedule') + '</button></div>';
+      if (!ui.customSchedOpen) {
+        pv.innerHTML = head + '<ul class="sched">' + C.visits.map(function (x) {
+          var cv = ui.customVisits[x.key] || {}, std = S.dueDate(v.dob, x);
+          var due = (cv.customDue && S.isISO(cv.customDue)) ? cv.customDue : std;
+          var done = cv.doneDate || null, st = S.status(due, done, t);
+          var tag = done ? ' <span class="chip c-ok">Given</span>'
+            : (due !== std ? ' <span class="chip c-soon">Custom</span>' : '') + (S.isLate(st) ? ' <span class="chip ' + (st.state === 'defaulter' ? 'c-def' : 'c-late') + '">Past</span>' : '');
+          return '<li><span>Visit at ' + esc(x.label) + '</span><span>' + S.fmt(due) + tag + '</span></li>';
+        }).join('') + '</ul>' +
+        '<p class="hint" style="margin-top:8px">Tap <strong>Customise schedule</strong> if this child needs special catch-up dates or has already had earlier visits.</p>' +
+        (!D.isVerified() ? '<p class="hint" style="margin-top:4px">Default clinic schedule not yet marked verified in Settings.</p>' : '');
+      } else {
+        pv.innerHTML = head + '<p class="hint" style="margin-bottom:10px">Set custom due dates for this child or tick visits already given.</p><ul class="sched custom-sched">' + C.visits.map(function (x) {
+          var cv = ui.customVisits[x.key] || {}, std = S.dueDate(v.dob, x);
+          var due = (cv.customDue && S.isISO(cv.customDue)) ? cv.customDue : std;
+          var isCustom = due !== std, isDone = !!cv.doneDate;
+          return '<li class="custom-row"><div class="custom-top"><strong>Visit at ' + esc(x.label) + '</strong><span class="small muted">Default: ' + S.fmt(std) + '</span></div>' +
+            '<div class="custom-controls"><input type="date" data-custom-due="' + x.key + '" min="' + v.dob + '" value="' + esc(due) + '" aria-label="Due date for ' + esc(x.label) + '">' +
+            (isCustom ? '<button type="button" class="btn quiet" style="min-height:40px;padding:0 8px;font-size:13px" data-action="reset-custom-due" data-key="' + x.key + '">Reset</button>' : '') +
+            '<label class="done-toggle"><input type="checkbox" data-custom-done="' + x.key + '"' + (isDone ? ' checked' : '') + '><span>Given</span></label></div></li>';
+        }).join('') + '</ul>';
+      }
     } else pv.hidden = true;
   }
   function submitEnrol() {
-    var t = S.today(), v = readForm(), r = validate(v, t), f = $('#enrolForm');
+    var t = S.today(), v = readForm(), r = validate(v, t);
     updateEnrolLive(true);
     var order = ['name', 'dob', 'phone', 'alt'];
     for (var i = 0; i < order.length; i++) if (r.errs[order[i]]) { $('#f-' + order[i]).focus(); return; }
@@ -347,11 +392,11 @@
       box.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    var data = { name: v.name, dob: v.dob, phone: r.phone, altPhone: r.alt || '', consent: v.consent };
+    var data = { name: v.name, dob: v.dob, phone: r.phone, altPhone: r.alt || '', consent: v.consent, customVisits: ui.customVisits };
     if (v.exceptId) { D.updateChild(v.exceptId, data); toast('Changes saved'); go('#/child/' + v.exceptId); return; }
     var c = D.addChild(data), n = urgentRow(c, t);
     toast(n ? v.name + ' enrolled. ' + (n.visit.st.state === 'due' ? 'A visit is due soon.' : 'Past visits need marking.') : v.name + ' enrolled.');
-    touched = {}; go('#/child/' + c.id);
+    touched = {}; ui.customVisits = {}; ui.customSchedOpen = false; go('#/child/' + c.id);
   }
 
   /* ============================== CHILD DETAIL ======================= */
@@ -369,10 +414,11 @@
         var ch = chip(x.st, x.due, x.done), mk;
         if (x.done) mk = '<span class="mark b-ok">' + ic('check') + '</span>';
         else mk = '<span class="mark ' + (x.st.state === 'defaulter' ? 'b-def' : x.st.state === 'overdue' ? 'b-late' : x.st.state === 'due' ? 'b-soon' : 'b-up') + '">' + (C.visits.indexOf(C.visits.filter(function (z) { return z.key === x.key; })[0]) + 1) + '</span>';
-        var sub = x.done ? 'Given ' + S.fmt(x.done) : 'Due ' + S.fmt(x.due);
+        var sub = x.done ? 'Given ' + S.fmt(x.done) : 'Due ' + S.fmt(x.due) + (x.customDue ? ' · custom (std ' + S.fmt(x.stdDue, 'short') + ')' : '');
         var act = x.done ? '<button class="btn quiet" data-action="undo-visit" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Undo ' + esc(x.label) + ' visit">' + ic('undo') + 'Undo</button>'
-          : '<button class="btn' + (firstPending && firstPending.key === x.key ? ' primary' : ' quiet') + '" data-action="open-done" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Mark ' + esc(x.label) + ' visit done">Mark done</button>';
-        return '<li>' + mk + '<div><p class="v-title">' + esc(x.label) + '</p><p class="v-sub">' + sub + '</p>' + (x.done || x.st.state === 'upcoming' ? '' : '<p style="margin-top:4px">' + chipHtml(ch) + '</p>') + '</div>' + act + '</li>';
+          : '<div class="v-acts"><button class="btn quiet" style="min-height:40px;padding:0 8px;font-size:14px" data-action="open-resched" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Change due date for ' + esc(x.label) + '">Set date</button>' +
+            '<button class="btn' + (firstPending && firstPending.key === x.key ? ' primary' : ' quiet') + '" data-action="open-done" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Mark ' + esc(x.label) + ' visit done">Mark done</button></div>';
+        return '<li>' + mk + '<div><p class="v-title">' + esc(x.label) + '</p><p class="v-sub">' + sub + '</p>' + (x.done || (x.st.state === 'upcoming' && !x.customDue) ? '' : '<p style="margin-top:4px">' + chipHtml(ch) + (x.customDue && !x.done ? ' <span class="chip c-soon">Custom schedule</span>' : '') + '</p>') + '</div>' + act + '</li>';
       }).join('') + '</ol></div>' +
       '<button class="btn quiet danger block remove" data-action="ask-remove" data-child="' + c.id + '">' + ic('trash') + 'Remove child</button>';
     return { title: c.name, html: html };
@@ -383,6 +429,22 @@
     openDlg('<form id="doneForm" novalidate><h2 id="dlgTitle">Mark visit done</h2><p class="muted">' + esc(c.name) + ' · visit at ' + esc(v.label) + '</p>' +
       '<div class="field" style="margin-top:16px" data-field="dd"><label for="f-dd">Date given</label><input id="f-dd" type="date" min="' + c.dob + '" max="' + S.today() + '" value="' + S.today() + '" aria-describedby="e-dd"><p class="msg" id="e-dd"></p></div>' +
       '<div class="sheet-actions"><button type="button" class="btn" data-action="close-dlg">Cancel</button><button type="submit" class="btn primary">Save</button></div></form>');
+  }
+  function openReschedSheet(childId, key) {
+    var c = D.child(childId), v = C.visits.filter(function (x) { return x.key === key; })[0]; if (!c || !v) return;
+    var rec = D.visitOf(childId, key), std = S.dueDate(c.dob, v), cur = (rec && rec.customDue) ? rec.customDue : std;
+    ui.reschedCtx = { childId: childId, key: key, std: std };
+    openDlg('<form id="reschedForm" novalidate><h2 id="dlgTitle">Customise due date</h2><p class="muted">' + esc(c.name) + ' · visit at ' + esc(v.label) + ' (standard due ' + S.fmt(std) + ')</p>' +
+      '<div class="field" style="margin-top:16px" data-field="rd"><label for="f-rd">Scheduled due date for this child</label><input id="f-rd" type="date" min="' + c.dob + '" value="' + cur + '" aria-describedby="e-rd"><p class="msg" id="e-rd"></p></div>' +
+      (rec && rec.customDue ? '<button type="button" class="btn quiet block" style="margin-top:10px" data-action="reset-visit-due">Reset to standard date (' + S.fmt(std) + ')</button>' : '') +
+      '<div class="sheet-actions"><button type="button" class="btn" data-action="close-dlg">Cancel</button><button type="submit" class="btn primary">Save due date</button></div></form>');
+  }
+  function submitResched() {
+    var ctx = ui.reschedCtx, c = D.child(ctx.childId), d = $('#f-rd').value;
+    if (!S.isISO(d)) return setField('rd', 'Enter a valid due date.', 'err');
+    if (d < c.dob) return setField('rd', 'Due date cannot be before the child was born.', 'err');
+    var prev = D.setCustomDue(ctx.childId, ctx.key, d); closeDlg(); render();
+    toast(d === ctx.std ? 'Due date set to standard' : 'Custom due date saved (' + S.fmt(d, 'short') + ')', function () { D.setCustomDue(ctx.childId, ctx.key, prev); render(); });
   }
   function submitDone() {
     var ctx = ui.doneCtx, c = D.child(ctx.childId), d = $('#f-dd').value, t = S.today();
@@ -457,9 +519,12 @@
       '<button class="btn block" data-action="pick-restore">' + ic('upload') + 'Restore from backup</button>' +
       '<p class="hint">A backup file contains names and phone numbers. Keep it somewhere private.</p></div>' +
       // Rarely-used detail is folded away (progressive disclosure); the status stays visible on the summary line.
-      '<details class="card fold"><summary><span>Visit schedule</span>' + (C.verified ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Verified</span>' : '<span class="chip c-late">' + ic('alert', 'sm') + 'Not verified</span>') + ic('chev') + '</summary><div class="fold-body">' +
-      (C.verified ? (C.verifiedBy ? '<p class="small muted">Verified by ' + esc(C.verifiedBy) + '.</p>' : '') : '<div class="callout warn">' + ic('alert') + '<div><strong>Not yet verified by the clinic.</strong> Check these ages before real use. They are set in the app’s schedule file.</div></div>') +
+      '<details class="card fold"><summary><span>Visit schedule</span>' + (D.isVerified() ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Verified</span>' : '<span class="chip c-late">' + ic('alert', 'sm') + 'Not verified</span>') + ic('chev') + '</summary><div class="fold-body">' +
+      (D.isVerified() ? '<div class="callout info">' + ic('check') + '<div><strong>Clinic schedule verified' + (D.verifiedBy() ? ' by ' + esc(D.verifiedBy()) : '') + '.</strong> Nurses can still customise due dates per child during enrolment or on a child’s record.</div></div>'
+        : '<div class="callout warn">' + ic('alert') + '<div><strong>Not yet verified by the clinic.</strong> Confirm these default ages with the nurse-in-charge below, or customise dates per child during enrolment.</div></div>') +
       '<ul class="sched">' + C.visits.map(function (v) { return '<li><span>' + esc(v.label) + '</span><span class="muted">' + (v.offset.weeks ? v.offset.weeks + ' weeks' : v.offset.months + ' months') + ' from birth</span></li>'; }).join('') + '</ul>' +
+      '<div class="field" style="margin-top:8px"><label for="verifiedByInput">Verified by (nurse / clinic lead)</label><input id="verifiedByInput" type="text" maxlength="60" placeholder="e.g. Matron Adebayo, RN" value="' + esc(D.verifiedBy()) + '"></div>' +
+      '<button type="button" class="btn ' + (D.isVerified() ? '' : 'primary ') + 'block" data-action="toggle-verify">' + (D.isVerified() ? 'Mark as unverified' : ic('check') + 'Verify clinic schedule') + '</button>' +
       '<p class="hint">Due soon: within ' + C.soonDays + ' days · Defaulter: ' + C.defaulterDays + '+ days overdue · Reminders: 2 and 1 days before · Recalls: 1 and 7 days after. These are design choices, not clinical rules.</p></div></details>' +
       '<details class="card fold"><summary><span>Demo data</span>' + (demoN ? '<span class="chip c-up">' + demoN + ' loaded</span>' : '') + ic('chev') + '</summary><div class="fold-body stack"><p class="small muted">Fake children only, with dates set relative to today so every list has something in it.</p>' +
       '<button class="btn block" data-action="load-demo">Load demo data</button>' + (demoN ? '<button class="btn block danger" data-action="remove-demo">Remove ' + demoN + ' demo children</button>' : '') + '</div></details>';
@@ -500,6 +565,24 @@
         toast('Visit set back to not done', function () { D.setDone(id2, key2, prev); render(); });
         break; }
       case 'open-done': openDoneSheet(el.getAttribute('data-child'), el.getAttribute('data-key')); break;
+      case 'open-resched': openReschedSheet(el.getAttribute('data-child'), el.getAttribute('data-key')); break;
+      case 'reset-visit-due': {
+        var rctx = ui.reschedCtx;
+        if (rctx) { D.setCustomDue(rctx.childId, rctx.key, null); closeDlg(); render(); toast('Reset to standard due date'); }
+        break; }
+      case 'toggle-custom-sched': ui.customSchedOpen = !ui.customSchedOpen; updateEnrolLive(); break;
+      case 'reset-custom-due': {
+        var rkey = el.getAttribute('data-key');
+        if (ui.customVisits[rkey]) delete ui.customVisits[rkey].customDue;
+        updateEnrolLive();
+        break; }
+      case 'toggle-verify': {
+        var vb = $('#verifiedByInput') ? $('#verifiedByInput').value.trim() : D.verifiedBy();
+        var nextV = !D.isVerified();
+        D.setVerified(nextV, vb);
+        toast(nextV ? 'Clinic schedule marked verified' : 'Schedule set back to unverified');
+        render();
+        break; }
       case 'close-dlg': closeDlg(); break;
       case 'toast-undo': if ($toast._undo) { var fn = $toast._undo; hideToast(); fn(); } break;
       case 'demo-call': toast('Demo number. No call was placed.'); break;
@@ -526,6 +609,23 @@
     e.preventDefault();
     if (e.target.id === 'enrolForm') submitEnrol();
     else if (e.target.id === 'doneForm') submitDone();
+    else if (e.target.id === 'reschedForm') submitResched();
+  });
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.getAttribute && t.getAttribute('data-custom-due')) {
+      var k = t.getAttribute('data-custom-due');
+      ui.customVisits[k] = ui.customVisits[k] || {};
+      ui.customVisits[k].customDue = t.value || null;
+      updateEnrolLive();
+    } else if (t.getAttribute && t.getAttribute('data-custom-done')) {
+      var k2 = t.getAttribute('data-custom-done');
+      ui.customVisits[k2] = ui.customVisits[k2] || {};
+      var v = readForm(), vCfg = C.visits.filter(function (x) { return x.key === k2; })[0];
+      var defDate = (ui.customVisits[k2].customDue && S.isISO(ui.customVisits[k2].customDue)) ? ui.customVisits[k2].customDue : (v.dob && S.isISO(v.dob) ? S.dueDate(v.dob, vCfg) : S.today());
+      ui.customVisits[k2].doneDate = t.checked ? (defDate <= S.today() ? defDate : S.today()) : null;
+      updateEnrolLive();
+    }
   });
   document.addEventListener('input', function (e) {
     var id = e.target.id;
