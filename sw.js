@@ -1,6 +1,6 @@
 /* Service worker: makes the app load with no connection.
    Bump CACHE whenever any file changes so phones pick up the new version. */
-var CACHE = 'immutrack-v9';
+var CACHE = 'immutrack-v10';
 var ASSETS = ['./', 'index.html', 'style.css', 'schedule.js', 'store.js', 'app.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 

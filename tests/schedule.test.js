@@ -95,6 +95,9 @@ D.setCustomDue(child.id, 'wk14', '2026-04-18'); // standard date resets customDu
 eq('setCustomDue to standard resets to null', D.visitOf(child.id, 'wk14').customDue, null);
 D.setVerified(true, 'Matron Adebayo');
 eq('clinic schedule verification saved', [D.isVerified(), D.verifiedBy()], [true, 'Matron Adebayo']);
+D.setFollowup(child.id, 'wk10', { contactOutcome: 'reached_coming', missedReason: 'forgot_date', contactNote: 'Coming Thursday', contactDate: '2026-11-15' });
+eq('contact outcome & missed reason saved', [D.visitOf(child.id, 'wk10').contactOutcome, D.visitOf(child.id, 'wk10').missedReason, D.visitOf(child.id, 'wk10').contactNote], ['reached_coming', 'forgot_date', 'Coming Thursday']);
+eq('outcomeLabel & reasonLabel lookup', [S.outcomeLabel('reached_coming'), S.reasonLabel('forgot_date')], ['Reached — promised to attend', 'Caregiver forgot appointment date']);
 eq('backup with customDue validates', D.validateBackup(D.exportData()).ok, true);
 const demoAdded = D.loadDemo('2026-11-15');
 eq('loadDemo adds 12 sample children', demoAdded, 12);

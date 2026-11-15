@@ -45,7 +45,14 @@
       var rec = D.visitOf(c.id, v.key), stdDue = S.dueDate(c.dob, v);
       var customDue = rec && rec.customDue ? rec.customDue : null;
       var due = customDue || stdDue, done = rec ? rec.doneDate : null;
-      return { key: v.key, label: v.label, due: due, stdDue: stdDue, customDue: customDue, done: done, st: S.status(due, done, t) };
+      return {
+        key: v.key, label: v.label, due: due, stdDue: stdDue, customDue: customDue, done: done,
+        contactOutcome: rec && rec.contactOutcome ? rec.contactOutcome : null,
+        missedReason: rec && rec.missedReason ? rec.missedReason : null,
+        contactNote: rec && rec.contactNote ? rec.contactNote : '',
+        contactDate: rec && rec.contactDate ? rec.contactDate : null,
+        st: S.status(due, done, t)
+      };
     });
   }
   function urgentRow(c, t) {
@@ -59,15 +66,15 @@
   function callRows(t) { return D.children().map(function (c) { return urgentRow(c, t); }).filter(Boolean).sort(byUrgency); }
   function childChip(all) {
     var p = all.filter(function (x) { return !x.done; })[0];
-    if (!p) return { cls: 'c-ok', text: 'All visits done', icon: 'check' };
+    if (!p) return { cls: 'c-ok', text: 'All visits confirmed', icon: 'check' };
     return chip(p.st, p.due);
   }
   function chip(st, due, doneDate) {
     switch (st.state) {
-      case 'defaulter': return { cls: 'c-def', text: 'Defaulter · ' + st.days + 'd late', icon: 'alert' };
-      case 'overdue': return { cls: 'c-late', text: S.dueText(st, due), icon: 'alert' };
-      case 'due': return { cls: 'c-soon', text: S.dueText(st, due), icon: 'today' };
-      case 'done': return { cls: 'c-ok', text: 'Done' + (doneDate ? ' ' + S.fmt(doneDate, 'short') : ''), icon: 'check' };
+      case 'defaulter': return { cls: 'c-def', text: 'Defaulter · ' + st.days + 'd late (unconfirmed)', icon: 'alert' };
+      case 'overdue': return { cls: 'c-late', text: S.dueText(st, due) + ' · unconfirmed', icon: 'alert' };
+      case 'due': return { cls: 'c-soon', text: S.dueText(st, due) + ' · unconfirmed', icon: 'today' };
+      case 'done': return { cls: 'c-ok', text: 'Confirmed' + (doneDate ? ' ' + S.fmt(doneDate, 'short') : ''), icon: 'check' };
       default: return { cls: 'c-up', text: S.dueText(st, due), icon: null };
     }
   }
@@ -187,17 +194,27 @@
   }
 
   /* ============================== TODAY ============================== */
+  function followupSummary(v) {
+    var parts = [];
+    if (v.contactOutcome) parts.push('Contact: ' + S.outcomeLabel(v.contactOutcome));
+    if (v.missedReason) parts.push('Reason: ' + S.reasonLabel(v.missedReason));
+    if (v.contactNote) parts.push('“' + v.contactNote + '”');
+    return parts.join(' · ');
+  }
   function rowHtml(r) {
     var c = r.child, v = r.visit;
     // Status is said once (the badge). Extra overdue visits and missing consent fold into the meta line.
-    var notes = [];
-    if (r.extra) notes.push('+' + r.extra + ' more overdue');
-    if (!c.consent) notes.push('no reminders');
+    var notes = ['attendance not confirmed'];
+    if (r.extra) notes.push('+' + r.extra + ' more unconfirmed');
+    if (!c.consent) notes.push('no SMS consent (call only)');
+    var fup = followupSummary(v);
     return '<li class="card row"><a class="rowmain" href="#/child/' + c.id + '">' + badge(v.st) +
       '<span class="who"><strong>' + esc(c.name) + '</strong><span class="meta">' + 'Visit at ' + esc(v.label) + ' · due ' + S.fmt(v.due, 'short') + '</span>' +
-      (notes.length ? '<span class="meta note">' + esc(notes.join(' · ')) + '</span>' : '') + '</span></a>' +
-      '<div class="actions">' + telLink(c, 'main', 'primary', 'Call') +
-      '<button class="btn" data-action="quick-done" data-child="' + c.id + '" data-key="' + v.key + '">' + ic('check') + '<span>Mark done</span></button></div></li>';
+      '<span class="meta note">' + esc(notes.join(' · ')) + '</span>' +
+      (fup ? '<span class="meta fup-line">' + esc(fup) + '</span>' : '') + '</span></a>' +
+      '<div class="actions actions-3">' + telLink(c, 'main', 'primary', 'Call') +
+      '<button class="btn quiet" data-action="open-followup" data-child="' + c.id + '" data-key="' + v.key + '">' + ic('edit') + '<span>' + (v.contactOutcome || v.missedReason ? 'Edit outcome' : 'Log outcome') + '</span></button>' +
+      '<button class="btn" data-action="quick-done" data-child="' + c.id + '" data-key="' + v.key + '">' + ic('check') + '<span>Confirm done</span></button></div></li>';
   }
   function viewToday(r, t) {
     var kids = D.children(), rows = callRows(t);
@@ -361,8 +378,8 @@
           var cv = ui.customVisits[x.key] || {}, std = S.dueDate(v.dob, x);
           var due = (cv.customDue && S.isISO(cv.customDue)) ? cv.customDue : std;
           var done = cv.doneDate || null, st = S.status(due, done, t);
-          var tag = done ? ' <span class="chip c-ok">Given</span>'
-            : (due !== std ? ' <span class="chip c-soon">Custom</span>' : '') + (S.isLate(st) ? ' <span class="chip ' + (st.state === 'defaulter' ? 'c-def' : 'c-late') + '">Past</span>' : '');
+          var tag = done ? ' <span class="chip c-ok">Confirmed</span>'
+            : (due !== std ? ' <span class="chip c-soon">Custom</span>' : '') + (S.isLate(st) ? ' <span class="chip ' + (st.state === 'defaulter' ? 'c-def' : 'c-late') + '">Attendance unconfirmed</span>' : '');
           return '<li><span>Visit at ' + esc(x.label) + '</span><span>' + S.fmt(due) + tag + '</span></li>';
         }).join('') + '</ul>' +
         '<p class="hint" style="margin-top:8px">Tap <strong>Customise schedule</strong> if this child needs special catch-up dates or has already had earlier visits.</p>' +
@@ -395,7 +412,7 @@
     var data = { name: v.name, dob: v.dob, phone: r.phone, altPhone: r.alt || '', consent: v.consent, customVisits: ui.customVisits };
     if (v.exceptId) { D.updateChild(v.exceptId, data); toast('Changes saved'); go('#/child/' + v.exceptId); return; }
     var c = D.addChild(data), n = urgentRow(c, t);
-    toast(n ? v.name + ' enrolled. ' + (n.visit.st.state === 'due' ? 'A visit is due soon.' : 'Past visits need marking.') : v.name + ' enrolled.');
+    toast(n ? v.name + ' enrolled. ' + (n.visit.st.state === 'due' ? 'A visit is due soon.' : 'Past visits have unconfirmed attendance.') : v.name + ' enrolled.');
     touched = {}; ui.customVisits = {}; ui.customSchedOpen = false; go('#/child/' + c.id);
   }
 
@@ -409,16 +426,29 @@
       '<div style="margin-top:12px"><div class="contact"><div><p class="small muted">Caregiver</p><p class="num">' + S.formatPhone(c.phone) + '</p></div>' + telLink(c, 'main', 'primary', 'Call') + '</div>' +
       (c.altPhone ? '<div class="contact"><div><p class="small muted">Second contact</p><p class="num">' + S.formatPhone(c.altPhone) + '</p></div>' + telLink(c, 'alt', '', 'Call') + '</div>' : '') + '</div>' +
       '<p style="margin-top:12px">' + (c.consent ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Reminders on</span>' : '<span class="chip c-up">No reminder consent · call only</span>') + '</p></div>' +
-      '<div class="sec-h"><h2>Visits</h2><span class="n">' + all.filter(function (x) { return x.done; }).length + ' of ' + all.length + ' done</span></div>' +
+      '<div class="sec-h"><h2>Visits</h2><span class="n">' + all.filter(function (x) { return x.done; }).length + ' of ' + all.length + ' confirmed</span></div>' +
       '<div class="card" style="padding:4px 16px"><ol class="visits">' + all.map(function (x) {
         var ch = chip(x.st, x.due, x.done), mk;
         if (x.done) mk = '<span class="mark b-ok">' + ic('check') + '</span>';
         else mk = '<span class="mark ' + (x.st.state === 'defaulter' ? 'b-def' : x.st.state === 'overdue' ? 'b-late' : x.st.state === 'due' ? 'b-soon' : 'b-up') + '">' + (C.visits.indexOf(C.visits.filter(function (z) { return z.key === x.key; })[0]) + 1) + '</span>';
-        var sub = x.done ? 'Given ' + S.fmt(x.done) : 'Due ' + S.fmt(x.due) + (x.customDue ? ' · custom (std ' + S.fmt(x.stdDue, 'short') + ')' : '');
+        var sub = x.done
+          ? 'Attendance confirmed · Given ' + S.fmt(x.done)
+          : (S.isLate(x.st) ? 'Attendance not confirmed · Was due ' : 'Attendance not yet confirmed · Due ') + S.fmt(x.due) + (x.customDue ? ' · custom (std ' + S.fmt(x.stdDue, 'short') + ')' : '');
+        var fupHtml = '';
+        if (!x.done && (x.contactOutcome || x.missedReason || x.contactNote)) {
+          var fp = [];
+          if (x.contactOutcome) fp.push('<strong>Contact outcome:</strong> ' + esc(S.outcomeLabel(x.contactOutcome)));
+          if (x.missedReason) fp.push('<strong>Reason for missed visit:</strong> ' + esc(S.reasonLabel(x.missedReason)));
+          if (x.contactNote) fp.push('<strong>Note:</strong> ' + esc(x.contactNote));
+          if (x.contactDate) fp.push('<span class="muted">Logged ' + S.fmt(x.contactDate, 'short') + '</span>');
+          fupHtml = '<div class="fup-box">' + fp.join(' · ') + '</div>';
+        }
         var act = x.done ? '<button class="btn quiet" data-action="undo-visit" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Undo ' + esc(x.label) + ' visit">' + ic('undo') + 'Undo</button>'
-          : '<div class="v-acts"><button class="btn quiet" style="min-height:40px;padding:0 8px;font-size:14px" data-action="open-resched" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Change due date for ' + esc(x.label) + '">Set date</button>' +
-            '<button class="btn' + (firstPending && firstPending.key === x.key ? ' primary' : ' quiet') + '" data-action="open-done" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Mark ' + esc(x.label) + ' visit done">Mark done</button></div>';
-        return '<li>' + mk + '<div><p class="v-title">' + esc(x.label) + '</p><p class="v-sub">' + sub + '</p>' + (x.done || (x.st.state === 'upcoming' && !x.customDue) ? '' : '<p style="margin-top:4px">' + chipHtml(ch) + (x.customDue && !x.done ? ' <span class="chip c-soon">Custom schedule</span>' : '') + '</p>') + '</div>' + act + '</li>';
+          : '<div class="v-acts">' +
+            '<button class="btn quiet" style="min-height:40px;padding:0 8px;font-size:13px" data-action="open-followup" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Log contact outcome or missed reason for ' + esc(x.label) + '">' + (x.contactOutcome || x.missedReason ? 'Edit outcome' : 'Log follow-up') + '</button>' +
+            '<button class="btn quiet" style="min-height:40px;padding:0 8px;font-size:13px" data-action="open-resched" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Change due date for ' + esc(x.label) + '">Set date</button>' +
+            '<button class="btn' + (firstPending && firstPending.key === x.key ? ' primary' : ' quiet') + '" data-action="open-done" data-child="' + c.id + '" data-key="' + x.key + '" aria-label="Confirm ' + esc(x.label) + ' attendance">Confirm done</button></div>';
+        return '<li>' + mk + '<div><p class="v-title">' + esc(x.label) + '</p><p class="v-sub">' + sub + '</p>' + (x.done || (x.st.state === 'upcoming' && !x.customDue) ? '' : '<p style="margin-top:4px">' + chipHtml(ch) + (x.customDue && !x.done ? ' <span class="chip c-soon">Custom schedule</span>' : '') + '</p>') + fupHtml + '</div>' + act + '</li>';
       }).join('') + '</ol></div>' +
       '<button class="btn quiet danger block remove" data-action="ask-remove" data-child="' + c.id + '">' + ic('trash') + 'Remove child</button>';
     return { title: c.name, html: html };
@@ -426,9 +456,35 @@
   function openDoneSheet(childId, key) {
     var c = D.child(childId), v = C.visits.filter(function (x) { return x.key === key; })[0]; if (!c || !v) return;
     ui.doneCtx = { childId: childId, key: key };
-    openDlg('<form id="doneForm" novalidate><h2 id="dlgTitle">Mark visit done</h2><p class="muted">' + esc(c.name) + ' · visit at ' + esc(v.label) + '</p>' +
-      '<div class="field" style="margin-top:16px" data-field="dd"><label for="f-dd">Date given</label><input id="f-dd" type="date" min="' + c.dob + '" max="' + S.today() + '" value="' + S.today() + '" aria-describedby="e-dd"><p class="msg" id="e-dd"></p></div>' +
-      '<div class="sheet-actions"><button type="button" class="btn" data-action="close-dlg">Cancel</button><button type="submit" class="btn primary">Save</button></div></form>');
+    openDlg('<form id="doneForm" novalidate><h2 id="dlgTitle">Confirm visit attendance</h2><p class="muted">' + esc(c.name) + ' · visit at ' + esc(v.label) + '</p>' +
+      '<div class="field" style="margin-top:16px" data-field="dd"><label for="f-dd">Date dose was given</label><input id="f-dd" type="date" min="' + c.dob + '" max="' + S.today() + '" value="' + S.today() + '" aria-describedby="e-dd"><p class="msg" id="e-dd"></p></div>' +
+      '<div class="sheet-actions"><button type="button" class="btn" data-action="close-dlg">Cancel</button><button type="submit" class="btn primary">Confirm attendance</button></div></form>');
+  }
+  function openFollowupSheet(childId, key) {
+    var c = D.child(childId), v = C.visits.filter(function (x) { return x.key === key; })[0]; if (!c || !v) return;
+    var rec = D.visitOf(childId, key) || {};
+    var curOut = rec.contactOutcome || '', curReas = rec.missedReason || '', curNote = rec.contactNote || '';
+    ui.fupCtx = { childId: childId, key: key };
+    var outOpts = '<option value="">— Select contact outcome —</option>' + C.contactOutcomes.map(function (o) {
+      return '<option value="' + o.key + '"' + (curOut === o.key ? ' selected' : '') + '>' + esc(o.label) + '</option>';
+    }).join('');
+    var reasOpts = '<option value="">— Select reason (if visit was missed) —</option>' + C.missedReasons.map(function (r) {
+      return '<option value="' + r.key + '"' + (curReas === r.key ? ' selected' : '') + '>' + esc(r.label) + '</option>';
+    }).join('');
+    openDlg('<form id="fupForm" novalidate><h2 id="dlgTitle">Follow-up &amp; missed visit log</h2><p class="muted">' + esc(c.name) + ' · visit at ' + esc(v.label) + ' (attendance not yet confirmed)</p>' +
+      '<div class="field" style="margin-top:14px"><label for="f-outcome">Contact outcome</label><select id="f-outcome">' + outOpts + '</select></div>' +
+      '<div class="field" style="margin-top:12px"><label for="f-reason">Reason for missed visit</label><select id="f-reason">' + reasOpts + '</select></div>' +
+      '<div class="field" style="margin-top:12px"><label for="f-note">Follow-up note <span class="opt">(optional)</span></label><input id="f-note" type="text" maxlength="120" placeholder="e.g. Mother promised to attend next Thursday" value="' + esc(curNote) + '"></div>' +
+      ((curOut || curReas || curNote) ? '<button type="button" class="btn quiet danger block" style="margin-top:10px" data-action="clear-followup">Clear follow-up log</button>' : '') +
+      '<div class="sheet-actions"><button type="button" class="btn" data-action="close-dlg">Cancel</button><button type="submit" class="btn primary">Save follow-up</button></div></form>');
+  }
+  function submitFollowup() {
+    var ctx = ui.fupCtx, out = $('#f-outcome').value, reas = $('#f-reason').value, note = $('#f-note').value.trim();
+    var prev = D.setFollowup(ctx.childId, ctx.key, { contactOutcome: out, missedReason: reas, contactNote: note, contactDate: S.today() });
+    closeDlg(); render();
+    toast((out || reas || note) ? 'Follow-up outcome saved' : 'Follow-up cleared', function () {
+      D.setFollowup(ctx.childId, ctx.key, prev); render();
+    });
   }
   function openReschedSheet(childId, key) {
     var c = D.child(childId), v = C.visits.filter(function (x) { return x.key === key; })[0]; if (!c || !v) return;
@@ -452,7 +508,7 @@
     if (d > t) return setField('dd', 'The date can’t be in the future.', 'err');
     if (d < c.dob) return setField('dd', 'That is before the child was born.', 'err');
     D.setDone(ctx.childId, ctx.key, d); closeDlg(); render();
-    toast('Visit marked done', function () { D.setDone(ctx.childId, ctx.key, null); render(); });
+    toast('Attendance confirmed', function () { D.setDone(ctx.childId, ctx.key, null); render(); });
   }
 
   /* ============================== REMINDERS ========================== */
@@ -522,12 +578,12 @@
       '<button class="btn block" data-action="load-demo">Load 12 sample children</button>' +
       (D.hasDemo() ? '<button class="btn quiet danger block" data-action="clear-demo">Remove sample children</button>' : '') + '</div>' +
       // Rarely-used detail is folded away (progressive disclosure); the status stays visible on the summary line.
-      '<details class="card fold"><summary><span>Visit schedule</span>' + (D.isVerified() ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Verified</span>' : '<span class="chip c-late">' + ic('alert', 'sm') + 'Not verified</span>') + ic('chev') + '</summary><div class="fold-body">' +
-      (D.isVerified() ? '<div class="callout info">' + ic('check') + '<div><strong>Clinic schedule verified' + (D.verifiedBy() ? ' by ' + esc(D.verifiedBy()) : '') + '.</strong> Nurses can still customise due dates per child during enrolment or on a child’s record.</div></div>'
-        : '<div class="callout warn">' + ic('alert') + '<div><strong>Not yet verified by the clinic.</strong> Confirm these default ages with the nurse-in-charge below, or customise dates per child during enrolment.</div></div>') +
+      '<details class="card fold"><summary><span>Visit schedule</span>' + (D.isVerified() ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Verified by clinic lead</span>' : '<span class="chip c-late">' + ic('alert', 'sm') + 'Requires clinic lead verification</span>') + ic('chev') + '</summary><div class="fold-body">' +
+      (D.isVerified() ? '<div class="callout info">' + ic('check') + '<div><strong>Default schedule verified' + (D.verifiedBy() ? ' by ' + esc(D.verifiedBy()) : ' by clinic lead') + '.</strong> Nurses can still customise due dates per child during enrolment or on a child’s record.</div></div>'
+        : '<div class="callout warn">' + ic('alert') + '<div><strong>Default appointment schedule requires verification by a qualified clinic lead.</strong> Confirm these default ages with the nurse-in-charge or medical officer below before clinical use, or customise dates per child during enrolment.</div></div>') +
       '<ul class="sched">' + C.visits.map(function (v) { return '<li><span>' + esc(v.label) + '</span><span class="muted">' + (v.offset.weeks ? v.offset.weeks + ' weeks' : v.offset.months + ' months') + ' from birth</span></li>'; }).join('') + '</ul>' +
-      '<div class="field" style="margin-top:8px"><label for="verifiedByInput">Verified by (nurse / clinic lead)</label><input id="verifiedByInput" type="text" maxlength="60" placeholder="e.g. Matron Adebayo, RN" value="' + esc(D.verifiedBy()) + '"></div>' +
-      '<button type="button" class="btn ' + (D.isVerified() ? '' : 'primary ') + 'block" data-action="toggle-verify">' + (D.isVerified() ? 'Mark as unverified' : ic('check') + 'Verify clinic schedule') + '</button>' +
+      '<div class="field" style="margin-top:8px"><label for="verifiedByInput">Verified by (qualified clinic lead — e.g. Matron / CHO / MO)</label><input id="verifiedByInput" type="text" maxlength="60" placeholder="e.g. Matron Adebayo, RN (Clinic Lead)" value="' + esc(D.verifiedBy()) + '"></div>' +
+      '<button type="button" class="btn ' + (D.isVerified() ? '' : 'primary ') + 'block" data-action="toggle-verify">' + (D.isVerified() ? 'Mark as unverified' : ic('check') + 'Verify default schedule as clinic lead') + '</button>' +
       '<p class="hint">Due soon: within ' + C.soonDays + ' days · Defaulter: ' + C.defaulterDays + '+ days overdue · Reminders: 2 and 1 days before · Recalls: 1 and 7 days after. These are design choices, not clinical rules.</p></div></details>';
     return { title: 'Settings', html: html };
   }
@@ -542,14 +598,23 @@
         var id = el.getAttribute('data-child'), key = el.getAttribute('data-key'), c = D.child(id);
         var v = C.visits.filter(function (x) { return x.key === key; })[0];
         D.setDone(id, key, t); render();
-        toast(c.name + ' · ' + v.label + ' marked done', function () { D.setDone(id, key, null); render(); });
+        toast(c.name + ' · ' + v.label + ' attendance confirmed', function () { D.setDone(id, key, null); render(); });
         break; }
       case 'undo-visit': {
         var id2 = el.getAttribute('data-child'), key2 = el.getAttribute('data-key'), prev = D.visitOf(id2, key2).doneDate;
         D.setDone(id2, key2, null); render();
-        toast('Visit set back to not done', function () { D.setDone(id2, key2, prev); render(); });
+        toast('Attendance set back to unconfirmed', function () { D.setDone(id2, key2, prev); render(); });
         break; }
       case 'open-done': openDoneSheet(el.getAttribute('data-child'), el.getAttribute('data-key')); break;
+      case 'open-followup': openFollowupSheet(el.getAttribute('data-child'), el.getAttribute('data-key')); break;
+      case 'clear-followup': {
+        var fctx = ui.fupCtx;
+        if (fctx) {
+          var prevFup = D.setFollowup(fctx.childId, fctx.key, { contactOutcome: null, missedReason: null, contactNote: '' });
+          closeDlg(); render();
+          toast('Follow-up log cleared', function () { D.setFollowup(fctx.childId, fctx.key, prevFup); render(); });
+        }
+        break; }
       case 'open-resched': openReschedSheet(el.getAttribute('data-child'), el.getAttribute('data-key')); break;
       case 'reset-visit-due': {
         var rctx = ui.reschedCtx;
@@ -595,6 +660,7 @@
     if (e.target.id === 'enrolForm') submitEnrol();
     else if (e.target.id === 'doneForm') submitDone();
     else if (e.target.id === 'reschedForm') submitResched();
+    else if (e.target.id === 'fupForm') submitFollowup();
   });
   document.addEventListener('change', function (e) {
     var t = e.target;

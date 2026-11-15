@@ -38,7 +38,24 @@
       reminder: "Reminder: {child}'s immunisation visit at {clinic} (age {visit}) is due on {date}. Please bring the child's health card.",
       recall: "{child}'s immunisation visit at {clinic} (age {visit}) was due on {date}. Please come soon. It is not too late."
     },
-    tokens: ['child', 'clinic', 'visit', 'date']
+    tokens: ['child', 'clinic', 'visit', 'date'],
+    contactOutcomes: [
+      { key: 'reached_coming',    label: 'Reached — promised to attend' },
+      { key: 'no_answer',         label: 'No answer / line busy' },
+      { key: 'switched_off',      label: 'Phone switched off / unreachable' },
+      { key: 'wrong_number',      label: 'Wrong or inactive number' },
+      { key: 'visited_elsewhere', label: 'Vaccinated at another clinic' },
+      { key: 'moved_away',        label: 'Family relocated / travelled' }
+    ],
+    missedReasons: [
+      { key: 'forgot_date',      label: 'Caregiver forgot appointment date' },
+      { key: 'child_ill',        label: 'Child was ill on due date' },
+      { key: 'caregiver_busy',   label: 'Caregiver unavailable (work / market)' },
+      { key: 'transport_cost',   label: 'Transport or distance challenge' },
+      { key: 'vaccine_stockout', label: 'Clinic stockout / rescheduled by clinic' },
+      { key: 'relocated',        label: 'Travelled or relocated' },
+      { key: 'other',            label: 'Other reason' }
+    ]
   };
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -171,12 +188,26 @@
     return bad;
   }
 
+  function outcomeLabel(key) {
+    if (!key) return '';
+    for (var i = 0; i < CONFIG.contactOutcomes.length; i++)
+      if (CONFIG.contactOutcomes[i].key === key) return CONFIG.contactOutcomes[i].label;
+    return key;
+  }
+  function reasonLabel(key) {
+    if (!key) return '';
+    for (var i = 0; i < CONFIG.missedReasons.length; i++)
+      if (CONFIG.missedReasons[i].key === key) return CONFIG.missedReasons[i].label;
+    return key;
+  }
+
   return {
     CONFIG: CONFIG, today: today, isDemoDate: isDemoDate, isISO: isISO,
     addDays: addDays, addMonths: addMonths, diffDays: diffDays,
     dueDate: dueDate, status: status, isLate: isLate, messagesFor: messagesFor,
     normalisePhone: normalisePhone, formatPhone: formatPhone,
     fmt: fmt, plural: plural, ageText: ageText, olderThan2Years: olderThan2Years, dueText: dueText,
+    outcomeLabel: outcomeLabel, reasonLabel: reasonLabel,
     render: render, unknownTokens: unknownTokens
   };
 });

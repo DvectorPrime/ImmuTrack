@@ -123,6 +123,23 @@
     save();
     return prev;
   }
+  function setFollowup(childId, visitKey, info) { // { contactOutcome, missedReason, contactNote, contactDate }
+    var v = visitOf(childId, visitKey);
+    if (!v) { v = { childId: childId, visitKey: visitKey, doneDate: null, customDue: null }; state.visits.push(v); }
+    var prev = {
+      contactOutcome: v.contactOutcome || null,
+      missedReason: v.missedReason || null,
+      contactNote: v.contactNote || '',
+      contactDate: v.contactDate || null
+    };
+    info = info || {};
+    v.contactOutcome = info.contactOutcome || null;
+    v.missedReason = info.missedReason || null;
+    v.contactNote = String(info.contactNote || '').trim().slice(0, 120);
+    v.contactDate = (v.contactOutcome || v.missedReason || v.contactNote) ? (info.contactDate || S.today()) : null;
+    save();
+    return prev;
+  }
   function removeDemo() {
     var ids = state.children.filter(function (c) { return c.demo; }).map(function (c) { return c.id; });
     ids.forEach(removeChild);
@@ -134,11 +151,14 @@
     removeDemo();
     var d = function (daysAgo) { return S.addDays(today, -daysAgo); };
     var rows = [
-      { name: 'Amina',  dob: d(63),  phone: '+2348030000101', alt: '+2348020000199', consent: true,  done: [] },
+      { name: 'Amina',  dob: d(63),  phone: '+2348030000101', alt: '+2348020000199', consent: true,  done: [],
+        followup: { wk6: { contactOutcome: 'reached_coming', missedReason: 'forgot_date', contactNote: 'Mother promised to come on next clinic day', contactDate: d(1) } } },
       { name: 'Chidi',  dob: d(79),  phone: '+2348050000102', consent: true,  done: ['wk6'] },
-      { name: 'Zainab', dob: d(112), phone: '+2348060000103', consent: false, done: ['wk6', 'wk10'] },
+      { name: 'Zainab', dob: d(112), phone: '+2348060000103', consent: false, done: ['wk6', 'wk10'],
+        followup: { wk14: { contactOutcome: 'no_answer', missedReason: '', contactNote: 'Tried calling twice; will try second visit call', contactDate: today } } },
       { name: 'Tunde',  dob: d(45),  phone: '+2348070000104', consent: true,  done: [] },
-      { name: 'Ngozi',  dob: d(75),  phone: '+2348080000105', consent: true,  done: ['wk6'] },
+      { name: 'Ngozi',  dob: d(75),  phone: '+2348080000105', consent: true,  done: ['wk6'],
+        followup: { wk10: { contactOutcome: 'reached_coming', missedReason: 'child_ill', contactNote: 'Child had mild fever on due date', contactDate: today } } },
       { name: 'Bello',  dob: d(42),  phone: '+2348090000106', consent: true,  done: [] },
       { name: 'Halima', dob: d(69),  phone: '+2348100000107', consent: true,  done: ['wk6'] },
       { name: 'Emeka',  dob: d(96),  phone: '+2348120000108', consent: true,  done: ['wk6', 'wk10'] },
@@ -153,6 +173,11 @@
         var v = S.CONFIG.visits.filter(function (x) { return x.key === k; })[0];
         if (v) setDone(c.id, k, S.dueDate(c.dob, v));
       });
+      if (r.followup) {
+        Object.keys(r.followup).forEach(function (k) {
+          setFollowup(c.id, k, r.followup[k]);
+        });
+      }
     });
     state.seeded = true;
     save();
@@ -219,7 +244,7 @@
     isSeeded: function () { return !!state.seeded; },
     hasDemo: function () { return state.children.some(function (c) { return c.demo; }); },
     children: children, child: child, visitOf: visitOf, findDuplicate: findDuplicate,
-    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, setCustomDue: setCustomDue,
+    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, setCustomDue: setCustomDue, setFollowup: setFollowup,
     loadDemo: loadDemo, removeDemo: removeDemo,
     hasLog: hasLog, addLog: addLog, log: function () { return state.messageLog; },
     clinicName: clinicName, setClinicName: setClinicName,
