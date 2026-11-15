@@ -96,6 +96,9 @@ eq('setCustomDue to standard resets to null', D.visitOf(child.id, 'wk14').custom
 D.setVerified(true, 'Matron Adebayo');
 eq('clinic schedule verification saved', [D.isVerified(), D.verifiedBy()], [true, 'Matron Adebayo']);
 eq('backup with customDue validates', D.validateBackup(D.exportData()).ok, true);
+const demoAdded = D.loadDemo('2026-11-15');
+eq('loadDemo adds 12 sample children', demoAdded, 12);
+eq('sample children use normal names without Demo prefix', D.children().some((c) => /^demo\s+/i.test(c.name)), false);
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

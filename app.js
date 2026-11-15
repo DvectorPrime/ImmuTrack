@@ -207,7 +207,7 @@
     var h = topHtml() + '<div><p class="eyebrow">' + S.fmt(t, 'long') + '</p><h1>Today</h1></div>';
 
     if (!kids.length) {
-      return { title: 'Today', html: h + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrol a child and the due dates, call list and reminders fill in by themselves.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol first child</a></div>' };
+      return { title: 'Today', html: h + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrol a child and the due dates, call list and reminders fill in by themselves.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol first child</a><button class="btn quiet" data-action="load-demo">Or load 12 sample children</button></div>' };
     }
     // Overview first (counts), then the work in order of urgency. One list, no second filter to learn.
     var stats = '<dl class="stats" aria-label="Summary">' + [['Defaulters', defs.length, 'def'], ['Overdue', late.length, 'late'], ['Due soon', soon.length, 'soon']].map(function (s) {
@@ -255,7 +255,7 @@
   function viewChildren() {
     var total = D.children().length;
     var html = topHtml() + '<h1>Children</h1>';
-    if (!total) return { title: 'Children', html: html + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrolled children appear here.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol a child</a></div>' };
+    if (!total) return { title: 'Children', html: html + '<div class="card empty"><span class="art">' + ic('users') + '</span><h2>No children yet</h2><p>Enrolled children appear here.</p><a class="btn primary" href="#/enrol">' + ic('plus') + 'Enrol a child</a><button class="btn quiet" data-action="load-demo">Load 12 sample children</button></div>' };
     html += '<div class="search"><label class="sr" for="q" style="position:absolute;left:-999px">Search children</label>' + ic('search') +
       '<input id="q" type="search" placeholder="Search name or phone" autocomplete="off" autocapitalize="off" spellcheck="false" value="' + esc(ui.search) + '"></div>' +
       '<p class="muted small" id="ccount" aria-live="polite"></p><ul class="list" id="clist"></ul>';
@@ -518,6 +518,9 @@
       '<button class="btn primary block" data-action="export">' + ic('download') + 'Export backup</button>' +
       '<button class="btn block" data-action="pick-restore">' + ic('upload') + 'Restore from backup</button>' +
       '<p class="hint">A backup file contains names and phone numbers. Keep it somewhere private.</p></div>' +
+      '<div class="sec-h"><h2>Sample data</h2></div><div class="card stack"><p class="small muted">Load 12 sample children across overdue, due soon, upcoming and completed states to preview the call list and reminders.</p>' +
+      '<button class="btn block" data-action="load-demo">Load 12 sample children</button>' +
+      (D.hasDemo() ? '<button class="btn quiet danger block" data-action="clear-demo">Remove sample children</button>' : '') + '</div>' +
       // Rarely-used detail is folded away (progressive disclosure); the status stays visible on the summary line.
       '<details class="card fold"><summary><span>Visit schedule</span>' + (D.isVerified() ? '<span class="chip c-ok">' + ic('check', 'sm') + 'Verified</span>' : '<span class="chip c-late">' + ic('alert', 'sm') + 'Not verified</span>') + ic('chev') + '</summary><div class="fold-body">' +
       (D.isVerified() ? '<div class="callout info">' + ic('check') + '<div><strong>Clinic schedule verified' + (D.verifiedBy() ? ' by ' + esc(D.verifiedBy()) : '') + '.</strong> Nurses can still customise due dates per child during enrolment or on a child’s record.</div></div>'
@@ -567,7 +570,9 @@
         break; }
       case 'close-dlg': closeDlg(); break;
       case 'toast-undo': if ($toast._undo) { var fn = $toast._undo; hideToast(); fn(); } break;
-      case 'demo-call': toast('Demo number. No call was placed.'); break;
+      case 'demo-call': toast('Sample number. No call was placed.'); break;
+      case 'load-demo': { var n = D.loadDemo(t); processToday(t); toast(n + ' sample children loaded'); go('#/today'); render(); break; }
+      case 'clear-demo': { var rm = D.removeDemo(); toast(rm ? rm + ' sample children removed' : 'No sample children to remove'); render(); break; }
       case 'enrol-anyway': ui.dupOk = true; submitEnrol(); break;
       case 'ask-remove': {
         var cr = D.child(el.getAttribute('data-child'));
@@ -654,6 +659,7 @@
 
   /* ------------------------------ start ------------------------------ */
   D.load();
+  if (!D.children().length && !D.isSeeded()) D.loadDemo(S.today());
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();   // ask the browser not to evict our records
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(function () {});
   if (!location.hash) history.replaceState(null, '', '#/today');

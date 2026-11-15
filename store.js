@@ -6,7 +6,7 @@
   var state = blank(), saveOk = true;
 
   function blank() {
-    return { v: 1, clinicName: '', scheduleVerified: null, verifiedBy: '', children: [], visits: [], messageLog: [], templates: {}, lastBackupAt: null };
+    return { v: 1, clinicName: '', scheduleVerified: null, verifiedBy: '', seeded: false, children: [], visits: [], messageLog: [], templates: {}, lastBackupAt: null };
   }
   function uid() {
     return (root.crypto && root.crypto.randomUUID) ? root.crypto.randomUUID()
@@ -18,7 +18,11 @@
     b.clinicName = typeof d.clinicName === 'string' ? d.clinicName : '';
     b.scheduleVerified = typeof d.scheduleVerified === 'boolean' ? d.scheduleVerified : null;
     b.verifiedBy = typeof d.verifiedBy === 'string' ? d.verifiedBy : '';
-    b.children = Array.isArray(d.children) ? d.children : [];
+    b.seeded = !!d.seeded;
+    b.children = Array.isArray(d.children) ? d.children.map(function (c) {
+      if (c && typeof c.name === 'string') c.name = c.name.replace(/^Demo\s+/i, '');
+      return c;
+    }) : [];
     b.visits = Array.isArray(d.visits) ? d.visits : [];
     b.messageLog = Array.isArray(d.messageLog) ? d.messageLog : [];
     b.templates = d.templates && typeof d.templates === 'object' ? d.templates : {};
@@ -37,7 +41,6 @@
         state = blank();
       }
     }
-    removeDemo();
     ensureVisits();
     return state;
   }
@@ -123,7 +126,37 @@
   function removeDemo() {
     var ids = state.children.filter(function (c) { return c.demo; }).map(function (c) { return c.id; });
     ids.forEach(removeChild);
+    state.seeded = true;
+    save();
     return ids.length;
+  }
+  function loadDemo(today) {
+    removeDemo();
+    var d = function (daysAgo) { return S.addDays(today, -daysAgo); };
+    var rows = [
+      { name: 'Amina',  dob: d(63),  phone: '+2348030000101', alt: '+2348020000199', consent: true,  done: [] },
+      { name: 'Chidi',  dob: d(79),  phone: '+2348050000102', consent: true,  done: ['wk6'] },
+      { name: 'Zainab', dob: d(112), phone: '+2348060000103', consent: false, done: ['wk6', 'wk10'] },
+      { name: 'Tunde',  dob: d(45),  phone: '+2348070000104', consent: true,  done: [] },
+      { name: 'Ngozi',  dob: d(75),  phone: '+2348080000105', consent: true,  done: ['wk6'] },
+      { name: 'Bello',  dob: d(42),  phone: '+2348090000106', consent: true,  done: [] },
+      { name: 'Halima', dob: d(69),  phone: '+2348100000107', consent: true,  done: ['wk6'] },
+      { name: 'Emeka',  dob: d(96),  phone: '+2348120000108', consent: true,  done: ['wk6', 'wk10'] },
+      { name: 'Kemi',   dob: d(36),  phone: '+2348130000109', consent: true,  done: [] },
+      { name: 'Musa',   dob: d(60),  phone: '+2348140000110', consent: true,  done: ['wk6'] },
+      { name: 'Adaeze', dob: d(250), phone: '+2348150000111', consent: true,  done: ['wk6', 'wk10', 'wk14'] },
+      { name: 'Sadiq',  dob: d(500), phone: '+2348160000112', consent: true,  done: ['wk6', 'wk10', 'wk14', 'mo9', 'mo15'] }
+    ];
+    rows.forEach(function (r) {
+      var c = addChild({ name: r.name, dob: r.dob, phone: r.phone, altPhone: r.alt || '', consent: r.consent, demo: true });
+      r.done.forEach(function (k) {
+        var v = S.CONFIG.visits.filter(function (x) { return x.key === k; })[0];
+        if (v) setDone(c.id, k, S.dueDate(c.dob, v));
+      });
+    });
+    state.seeded = true;
+    save();
+    return rows.length;
   }
 
   /* --------------------------- message log --------------------------- */
@@ -183,8 +216,11 @@
 
   root.Store = {
     load: load, save: save, isSaving: function () { return saveOk; },
+    isSeeded: function () { return !!state.seeded; },
+    hasDemo: function () { return state.children.some(function (c) { return c.demo; }); },
     children: children, child: child, visitOf: visitOf, findDuplicate: findDuplicate,
-    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, setCustomDue: setCustomDue, removeDemo: removeDemo,
+    addChild: addChild, updateChild: updateChild, removeChild: removeChild, setDone: setDone, setCustomDue: setCustomDue,
+    loadDemo: loadDemo, removeDemo: removeDemo,
     hasLog: hasLog, addLog: addLog, log: function () { return state.messageLog; },
     clinicName: clinicName, setClinicName: setClinicName,
     isVerified: isVerified, verifiedBy: verifiedBy, setVerified: setVerified,
